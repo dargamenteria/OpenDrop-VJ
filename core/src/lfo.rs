@@ -22,7 +22,14 @@ pub enum LfoShape {
 pub struct LfoSlot {
     pub enabled: bool,
     pub shape: LfoShape,
-    /// Multiplier of beat rate: 1 = once per beat, 2 = twice per beat, 0.5 = once per 2 beats
+    /// Cycles per beat: 1 = one full cycle every beat, 2 = twice a beat, 4 =
+    /// 4 times a beat. A value below 1 spans multiple beats per cycle: 0.5 =
+    /// once every 2 beats, 1.0/32.0 = once every 32 beats, and so on. Needs
+    /// `LfoEngine::tick`'s continuously-increasing `total_beats` input to
+    /// actually work below 1: multiplying only the *current beat's* 0..1
+    /// phase (no memory of how many beats have already elapsed) can never
+    /// finish a cycle that's supposed to span more than one beat, it would
+    /// just retrace the same truncated arc every single beat instead.
     pub rate: f64,
     /// Phase offset 0..1
     pub offset: f64,
@@ -87,14 +94,19 @@ impl LfoEngine {
         }
     }
 
-    /// Compute all LFO values for the given clock phase (0..1 within a beat).
-    pub fn tick(&self, clock_phase01: f64) -> [LfoOutput; LFO_SLOTS] {
+    /// Compute all LFO values for `total_beats`, the continuously
+    /// increasing beat position (`Clock::total_beats`: whole beats elapsed
+    /// plus the current one's phase, never resetting to 0 at a beat
+    /// boundary). Passing just the current beat's 0..1 phase here would
+    /// break any slot whose `rate` is meant to span more than one beat; see
+    /// `LfoSlot::rate`'s own doc comment.
+    pub fn tick(&self, total_beats: f64) -> [LfoOutput; LFO_SLOTS] {
         std::array::from_fn(|i| {
             let slot = self.slots[i];
             if slot.enabled {
                 LfoOutput {
                     target: slot.target,
-                    value01: self.compute(&slot, clock_phase01, self.sh_values[i]),
+                    value01: self.compute(&slot, total_beats, self.sh_values[i]),
                 }
             } else {
                 LfoOutput { target: None, value01: slot.center }
@@ -102,8 +114,8 @@ impl LfoEngine {
         })
     }
 
-    fn compute(&self, slot: &LfoSlot, clock_phase: f64, sh_value: f64) -> f64 {
-        let p = (clock_phase * slot.rate + slot.offset) % 1.0;
+    fn compute(&self, slot: &LfoSlot, total_beats: f64, sh_value: f64) -> f64 {
+        let p = (total_beats * slot.rate + slot.offset) % 1.0;
         let raw = match slot.shape {
             LfoShape::Sine => ((p * std::f64::consts::TAU).sin() + 1.0) / 2.0,
             LfoShape::Saw => p,
@@ -246,6 +258,29 @@ mod tests {
                 ..Default::default()
             };
             assert_close(tick_first(&engine, 0.5).value01, 0.0);
+        }
+
+        /// Regression: a rate below 1 must complete its cycle across
+        /// multiple beats, not retrace the same truncated arc every single
+        /// beat. `total_beats` (not a per-beat-resetting phase) is what
+        /// makes this possible; see `LfoSlot::rate`'s doc comment.
+        #[test]
+        fn rate_0_25_spans_a_full_cycle_over_4_beats() {
+            let mut engine = LfoEngine::new();
+            engine.slots[0] = LfoSlot {
+                enabled: true,
+                shape: LfoShape::Saw,
+                center: 0.5,
+                amount: 1.0,
+                rate: 0.25,
+                ..Default::default()
+            };
+            // Saw output == p directly (center 0.5, amount 1.0 -> value01 == p).
+            assert_close(tick_first(&engine, 0.0).value01, 0.0);
+            assert_close(tick_first(&engine, 1.0).value01, 0.25);
+            assert_close(tick_first(&engine, 2.0).value01, 0.5);
+            assert_close(tick_first(&engine, 3.0).value01, 0.75);
+            assert_close(tick_first(&engine, 4.0).value01, 0.0); // wrapped: one full cycle done
         }
     }
 

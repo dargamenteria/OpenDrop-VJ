@@ -24,6 +24,33 @@ use crate::ui::widgets::{self, theme};
 const SHAPES: [(LfoShape, &str); 4] =
     [(LfoShape::Sine, "Sine"), (LfoShape::Saw, "Saw"), (LfoShape::Square, "Square"), (LfoShape::Sh, "S&H")];
 
+/// Discrete `rate` choices offered in place of a free-dragging slider,
+/// labeled the way a musician would read them rather than as a raw
+/// multiplier: `×n` (n cycles per beat, fast) on one side of the default
+/// `×1`, `/n` (one cycle every n beats, slow/tempo-locked sweep) on the
+/// other. `LfoSlot::rate` is "cycles per beat" either way (`×n` is `rate =
+/// n`, `/n` is `rate = 1.0/n`); see that field's own doc comment for why a
+/// below-1 rate needs `Clock::total_beats`/`LfoEngine::tick`'s
+/// continuously-increasing phase to actually span multiple beats instead
+/// of retracing the same truncated arc every single beat.
+const LFO_RATE_OPTIONS: [(&str, f64); 15] = [
+    ("×128", 128.0),
+    ("×64", 64.0),
+    ("×32", 32.0),
+    ("×16", 16.0),
+    ("×8", 8.0),
+    ("×4", 4.0),
+    ("×2", 2.0),
+    ("×1", 1.0),
+    ("/2", 1.0 / 2.0),
+    ("/4", 1.0 / 4.0),
+    ("/8", 1.0 / 8.0),
+    ("/16", 1.0 / 16.0),
+    ("/32", 1.0 / 32.0),
+    ("/64", 1.0 / 64.0),
+    ("/128", 1.0 / 128.0),
+];
+
 /// Registered `CommandId`s of kind `Range`, with their labels: the LFO
 /// target dropdown's candidate list. A free function (not inlined into
 /// `show`) so it's independently testable without an `egui::Ui`.
@@ -68,7 +95,17 @@ pub fn show(ui: &mut egui::Ui, show: &mut Show, registry: &CommandRegistry) {
             });
 
             widgets::micro_label(ui, "Rate");
-            ui.add(egui::Slider::new(&mut slot.rate, 0.25..=4.0).step_by(0.25));
+            let selected_label = LFO_RATE_OPTIONS
+                .iter()
+                .find(|(_, rate)| (*rate - slot.rate).abs() < 1e-9)
+                .map_or("Custom", |(label, _)| label);
+            egui::ComboBox::from_id_salt("od_lfo_rate").selected_text(selected_label).show_ui(ui, |ui| {
+                for (label, rate) in LFO_RATE_OPTIONS {
+                    if ui.selectable_label(selected_label == label, label).clicked() {
+                        slot.rate = rate;
+                    }
+                }
+            });
 
             widgets::micro_label(ui, "Amount");
             ui.add(egui::Slider::new(&mut slot.amount, 0.0..=1.0).step_by(0.05));

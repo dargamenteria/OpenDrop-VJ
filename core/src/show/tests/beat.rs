@@ -589,7 +589,7 @@ mod lfo_end_to_end_dispatch {
     }
 
     fn tick_and_dispatch(reg: &crate::commands::CommandRegistry, show: &mut Show) {
-        let outputs = show.lfo_engine.tick(show.clock.phase01());
+        let outputs = show.lfo_engine.tick(show.clock.total_beats());
         for output in outputs {
             if let Some(id) = output.target {
                 reg.dispatch(id, output.value01, show);

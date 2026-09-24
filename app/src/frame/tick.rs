@@ -212,9 +212,13 @@ pub(crate) fn tick_show(state: &mut AppState, now: Instant) -> TickOutput {
     // loops above, but driven by beat phase rather than dt:
     // `LfoSlot::rate` is a multiplier of beat rate (see
     // `core::lfo`'s doc comments), not Hz, so it reads
-    // `state.show.clock.phase01()` directly instead of
-    // accumulating its own elapsed time from `dt`.
-    let lfo_outputs = state.show.lfo_engine.tick(state.show.clock.phase01());
+    // `state.show.clock.total_beats()` directly instead of
+    // accumulating its own elapsed time from `dt`. Must be total_beats
+    // (continuously increasing), not phase01 (resets every beat): a rate
+    // below 1 spans multiple beats per cycle, and phase01 alone has no
+    // memory of how many beats already elapsed, so it retraced the same
+    // truncated arc every beat instead of ever completing a cycle.
+    let lfo_outputs = state.show.lfo_engine.tick(state.show.clock.total_beats());
     for output in lfo_outputs {
         if let Some(id) = output.target {
             state.registry.dispatch(id, output.value01, &mut state.show);

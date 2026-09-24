@@ -31,6 +31,17 @@ impl Clock {
         self.beat_count
     }
 
+    /// Continuously increasing beat position: whole beats elapsed plus how
+    /// far into the current one (`beat_count + phase01`), never resetting
+    /// to 0 at a beat boundary the way `phase01` alone does. Feeds
+    /// `LfoEngine::tick`, which needs this to let a slot's `rate` genuinely
+    /// span multiple beats (e.g. one LFO cycle every 32 beats) instead of
+    /// restarting every single beat; see that field's own doc comment for
+    /// why `phase01` alone can't do that.
+    pub fn total_beats(&self) -> f64 {
+        self.beat_count as f64 + self.phase01
+    }
+
     pub fn set_bpm(&mut self, bpm: f64) {
         self.bpm = bpm.clamp(0.0, 300.0);
     }
@@ -208,6 +219,37 @@ mod tests {
             assert!(clock.phase01().abs() < 1e-9);
             assert_eq!(clock.beat_count(), 1);
             assert_eq!(beats2, 1);
+        }
+    }
+
+    mod total_beats {
+        use super::*;
+
+        #[test]
+        fn zero_before_any_step() {
+            assert_eq!(Clock::new().total_beats(), 0.0);
+        }
+
+        #[test]
+        fn is_beat_count_plus_phase_within_the_current_beat() {
+            let mut clock = Clock::new();
+            clock.set_bpm(60.0); // 1 beat/sec
+            clock.step(0.5); // phase = 0.5, 0 beats elapsed
+            assert!((clock.total_beats() - 0.5).abs() < 1e-9);
+            clock.step(0.5); // wraps: phase = 0.0, 1 beat elapsed
+            assert!((clock.total_beats() - 1.0).abs() < 1e-9);
+            clock.step(0.25); // phase = 0.25, still 1 beat elapsed
+            assert!((clock.total_beats() - 1.25).abs() < 1e-9);
+        }
+
+        #[test]
+        fn never_resets_across_a_beat_boundary_unlike_phase01_alone() {
+            let mut clock = Clock::new();
+            clock.set_bpm(60.0);
+            for _ in 0..5 {
+                clock.step(1.0); // one full beat each call
+            }
+            assert!((clock.total_beats() - 5.0).abs() < 1e-9);
         }
     }
 }
