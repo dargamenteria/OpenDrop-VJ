@@ -204,6 +204,7 @@ fn bpm_tap(ui: &mut egui::Ui, show: &mut Show, t0: Instant) {
         if ui.button("Tap").clicked() {
             show.tap_tempo(t0.elapsed().as_secs_f64() * 1000.0);
         }
+        manual_bpm_input(ui, show);
         if ui.button("Clear").clicked() {
             show.clear_manual_bpm();
         }
@@ -232,6 +233,29 @@ fn bpm_tap(ui: &mut egui::Ui, show: &mut Show, t0: Instant) {
             show.reset_auto_xfade_count();
         }
     });
+}
+
+/// Directly set a fixed BPM, for when the detected/tapped tempo isn't
+/// what's wanted. Sits between Tap (converges on a value by rhythm) and
+/// Clear (returns to auto-detected), same plain unstyled look as both
+/// (and every other control on this row): no separate "is this active"
+/// highlight, the BPM readout itself already shows whatever value is
+/// live.
+///
+/// The displayed value is re-derived from `show.manual_bpm` fresh every
+/// frame (falling back to 120 while in auto mode, a reasonable starting
+/// point to drag from) rather than kept in separate widget-local state:
+/// that keeps it automatically in sync with Tap/Clear changing the BPM
+/// out from under it, with no manual resync needed. `DragValue::changed`
+/// only fires on an actual user edit (drag delta or a committed text
+/// entry), so this never calls `set_manual_bpm` on frames the user didn't
+/// touch it.
+fn manual_bpm_input(ui: &mut egui::Ui, show: &mut Show) {
+    let active = show.manual_bpm > 0.0;
+    let mut value = if active { show.manual_bpm } else { 120.0 };
+    if ui.add(egui::DragValue::new(&mut value).range(40.0..=300.0).speed(1.0)).changed() {
+        show.set_manual_bpm(value);
+    }
 }
 
 /// The BPM readout alone: bare number (or `-` if unknown), mono font, with
@@ -578,6 +602,7 @@ pub fn status_bar_stage(ui: &mut egui::Ui, shell: &mut ShellCtx, perform: &mut P
                 if ui.button("Tap").clicked() {
                     perform.show.tap_tempo(perform.t0.elapsed().as_secs_f64() * 1000.0);
                 }
+                manual_bpm_input(ui, perform.show);
                 if ui.button("Clear").clicked() {
                     perform.show.clear_manual_bpm();
                 }

@@ -268,6 +268,50 @@ mod tap_tempo {
     }
 }
 
+mod set_manual_bpm {
+    use super::*;
+
+    #[test]
+    fn sets_manual_bpm_and_the_clock_bpm() {
+        let mut show = Show::default();
+        show.set_manual_bpm(130.0);
+        assert_eq!(show.manual_bpm, 130.0);
+        assert_eq!(show.clock.bpm(), 130.0);
+    }
+
+    #[test]
+    fn overwrites_a_previous_manual_bpm() {
+        let mut show = Show::default();
+        show.set_manual_bpm(130.0);
+        show.set_manual_bpm(90.0);
+        assert_eq!(show.manual_bpm, 90.0);
+        assert_eq!(show.clock.bpm(), 90.0);
+    }
+
+    #[test]
+    fn rejects_a_value_below_40() {
+        let mut show = Show::default();
+        show.set_manual_bpm(39.0);
+        assert_eq!(show.manual_bpm, 0.0);
+    }
+
+    #[test]
+    fn rejects_a_value_above_300() {
+        let mut show = Show::default();
+        show.set_manual_bpm(301.0);
+        assert_eq!(show.manual_bpm, 0.0);
+    }
+
+    #[test]
+    fn accepts_the_boundary_values() {
+        let mut show = Show::default();
+        show.set_manual_bpm(40.0);
+        assert_eq!(show.manual_bpm, 40.0);
+        show.set_manual_bpm(300.0);
+        assert_eq!(show.manual_bpm, 300.0);
+    }
+}
+
 mod clear_manual_bpm {
     use super::*;
 

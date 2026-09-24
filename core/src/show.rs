@@ -548,6 +548,23 @@ impl Show {
         self.clock.pulse(None); // resync phase only, bpm already set; does not emit a beat.
     }
 
+    /// Sets a fixed manual BPM directly, for when the detected/tapped
+    /// tempo isn't what's wanted: e.g. the track's actual BPM is known in
+    /// advance, or beat detection is unreliable for this particular audio
+    /// source. Same effect as `tap_tempo` converging on a value (resyncs
+    /// the clock's phase, doesn't emit a beat) and the same `40.0..=300.0`
+    /// validation range; out of range is a silent no-op, matching
+    /// `tap_tempo`'s own rejection of a wild computed BPM rather than
+    /// clamping it to the nearest bound.
+    pub fn set_manual_bpm(&mut self, bpm: f64) {
+        if !(40.0..=300.0).contains(&bpm) {
+            return;
+        }
+        self.manual_bpm = bpm;
+        self.clock.set_bpm(bpm);
+        self.clock.pulse(None);
+    }
+
     /// Port of `clearManualBpm`, `beat-tempo-actions.ts:113-117`.
     pub fn clear_manual_bpm(&mut self) {
         self.manual_bpm = 0.0;
