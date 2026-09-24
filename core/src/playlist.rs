@@ -268,6 +268,18 @@ impl PlaylistStore {
         }
     }
 
+    /// Replaces `deck`'s entire item list (used by loading a previously
+    /// saved playlist), syncing the live engine the same way
+    /// `add_to_playlist`/`remove_from_playlist` do rather than requiring
+    /// the caller to add items one at a time.
+    pub fn replace_items(&mut self, deck: Deck, items: Vec<String>) {
+        let (existing, engine) = self.deck_parts_mut(deck);
+        *existing = items;
+        if let Some(engine) = engine {
+            engine.set_items(existing.clone());
+        }
+    }
+
     pub fn toggle_playlist(&mut self, deck: Deck) {
         let interval_ms = self.interval_sec * 1000.0;
         let mode = self.mode;
@@ -635,6 +647,40 @@ mod tests {
                 let engine_b = PlaylistEngine::new(Vec::new(), PlaylistMode::Sequential, 1000.0, cb_b);
                 store.set_engines(engine_a, engine_b);
                 store.add_to_playlist(Deck::A, "p1".to_string());
+                store.engine_a_mut().unwrap().start();
+                assert_eq!(*calls_a.borrow(), vec!["p1"]);
+            }
+        }
+
+        mod replace_items {
+            use super::*;
+
+            #[test]
+            fn replaces_the_whole_list_for_the_targeted_deck() {
+                let mut store = PlaylistStore::new();
+                store.add_to_playlist(Deck::A, "old1".to_string());
+                store.add_to_playlist(Deck::A, "old2".to_string());
+                store.replace_items(Deck::A, vec!["new1".to_string(), "new2".to_string()]);
+                assert_eq!(store.a_items, vec!["new1".to_string(), "new2".to_string()]);
+            }
+
+            #[test]
+            fn does_not_touch_the_other_decks_items() {
+                let mut store = PlaylistStore::new();
+                store.add_to_playlist(Deck::B, "presetX".to_string());
+                store.replace_items(Deck::A, vec!["new1".to_string()]);
+                assert_eq!(store.b_items, vec!["presetX".to_string()]);
+            }
+
+            #[test]
+            fn propagates_to_the_active_engine() {
+                let mut store = PlaylistStore::new();
+                let (calls_a, cb_a) = spy();
+                let (_, cb_b) = spy();
+                let engine_a = PlaylistEngine::new(Vec::new(), PlaylistMode::Sequential, 1000.0, cb_a);
+                let engine_b = PlaylistEngine::new(Vec::new(), PlaylistMode::Sequential, 1000.0, cb_b);
+                store.set_engines(engine_a, engine_b);
+                store.replace_items(Deck::A, vec!["p1".to_string()]);
                 store.engine_a_mut().unwrap().start();
                 assert_eq!(*calls_a.borrow(), vec!["p1"]);
             }

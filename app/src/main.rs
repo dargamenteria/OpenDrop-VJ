@@ -14,6 +14,7 @@ mod keymap;
 mod overlays;
 mod panel;
 mod paths;
+mod playlist_file;
 mod preflight;
 mod preset_load;
 mod preset_scan;

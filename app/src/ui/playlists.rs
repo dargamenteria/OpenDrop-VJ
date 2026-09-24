@@ -84,7 +84,76 @@ pub fn show(ui: &mut egui::Ui, show: &mut Show, library: &mut LibraryCtx) {
             deck_panel(&mut columns[0], show, Deck::A, library.thumbnail_textures, library.failed_thumbnails, library.thumb_queue);
             deck_panel(&mut columns[1], show, Deck::B, library.thumbnail_textures, library.failed_thumbnails, library.thumb_queue);
         });
+
+        ui.separator();
+
+        ui.horizontal(|ui| {
+            if ui.button("Save Playlists").clicked() {
+                save_playlists_to_disk(show);
+            }
+            if ui.button("Load Playlists").clicked() {
+                load_playlists_from_disk(show);
+            }
+        });
     });
+}
+
+/// Opens a native "save as" dialog (blocks this thread while open, same
+/// tradeoff `ui::cloud_presets::upload_via_file_dialog` already documents;
+/// no async file-dialog convention exists anywhere else in this app
+/// either), defaulting to `playlist_file::playlists_file_path()`'s
+/// directory/name so the common case is just confirming a location, and
+/// writes both decks' current items, mode, and interval to wherever the
+/// user picked. Best-effort past that point, same never-panic philosophy
+/// as `config::save_config`: a write failure is logged, never surfaced as
+/// a panel error field, since this button has no dedicated error UI of its
+/// own.
+fn save_playlists_to_disk(show: &Show) {
+    let mut dialog = rfd::FileDialog::new().add_filter("JSON", &["json"]).set_file_name("playlists.json");
+    if let Some(default_path) = crate::playlist_file::playlists_file_path() {
+        if let Some(dir) = default_path.parent() {
+            dialog = dialog.set_directory(dir);
+        }
+    }
+    let Some(path) = dialog.save_file() else {
+        return; // dialog cancelled
+    };
+    let saved = crate::playlist_file::SavedPlaylists {
+        mode: show.playlists.mode,
+        interval_sec: show.playlists.interval_sec,
+        a_items: show.playlists.a_items.clone(),
+        b_items: show.playlists.b_items.clone(),
+    };
+    if let Err(e) = crate::playlist_file::save_playlists(&path, &saved) {
+        eprintln!("[playlists] save failed: {e}");
+    }
+}
+
+/// Opens a native "open file" dialog, same conventions as
+/// `save_playlists_to_disk` above, and replaces both decks' items, mode,
+/// and interval with the picked file's saved values.
+/// `PlaylistStore::replace_items` syncs a live engine the same way
+/// add/remove already do, so a deck already playing picks up the loaded
+/// list immediately rather than needing a stop/start to notice it.
+fn load_playlists_from_disk(show: &mut Show) {
+    let mut dialog = rfd::FileDialog::new().add_filter("JSON", &["json"]);
+    if let Some(default_path) = crate::playlist_file::playlists_file_path() {
+        if let Some(dir) = default_path.parent() {
+            dialog = dialog.set_directory(dir);
+        }
+    }
+    let Some(path) = dialog.pick_file() else {
+        return; // dialog cancelled
+    };
+    match crate::playlist_file::load_playlists(&path) {
+        Ok(saved) => {
+            show.playlists.mode = saved.mode;
+            show.playlists.interval_sec = saved.interval_sec;
+            show.playlists.replace_items(Deck::A, saved.a_items);
+            show.playlists.replace_items(Deck::B, saved.b_items);
+        }
+        Err(e) => eprintln!("[playlists] load failed: {e}"),
+    }
 }
 
 /// One deck's (A/B) playlist transport/lock/items + beat-sync/trigger
